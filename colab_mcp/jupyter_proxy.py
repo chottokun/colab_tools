@@ -25,6 +25,8 @@ class JupyterProxy:
         clean_url = runtime_url.rstrip("/")
         clean_path = remote_path.lstrip("/")
         url = f"{clean_url}/api/contents/{clean_path}"
+        if not url.startswith(("https://", "http://")):
+            raise ValueError(f"Invalid URL scheme: {url}")
 
         b64_content = base64.b64encode(content).decode("ascii")
         payload = json.dumps({
@@ -39,7 +41,7 @@ class JupyterProxy:
         }
         req = urllib.request.Request(url, data=payload, headers=headers, method="PUT")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req) as resp:  # nosec B310
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", errors="replace")
@@ -57,13 +59,15 @@ class JupyterProxy:
         clean_url = runtime_url.rstrip("/")
         clean_path = remote_path.lstrip("/")
         url = f"{clean_url}/files/{clean_path}"
+        if not url.startswith(("https://", "http://")):
+            raise ValueError(f"Invalid URL scheme: {url}")
 
         headers = {
             "X-Colab-Runtime-Proxy-Token": proxy_token
         }
         req = urllib.request.Request(url, headers=headers, method="GET")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req) as resp:  # nosec B310
                 return resp.read()
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", errors="replace")

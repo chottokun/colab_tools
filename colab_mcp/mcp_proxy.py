@@ -41,14 +41,17 @@ def forward_request(req_dict: dict, token: Optional[str] = None) -> dict:
         headers["Authorization"] = f"Bearer {auth_token}"
 
     data = json.dumps(req_dict).encode("utf-8")
+    endpoint = ColabConfig.DEFAULT_MCP_ENDPOINT
+    if not endpoint.startswith(("https://", "http://")):
+        raise ValueError(f"Insecure or invalid URL scheme in MCP endpoint: {endpoint}")
     req = urllib.request.Request(
-        ColabConfig.DEFAULT_MCP_ENDPOINT,
+        endpoint,
         data=data,
         headers=headers,
         method="POST"
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req) as resp:  # nosec B310
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")

@@ -22,6 +22,9 @@ class ColabRESTClient:
             raise ValueError("Access token is required for Colab REST API.")
 
         url = f"{self.base_url}/{path.lstrip('/')}"
+        if not url.startswith(("https://", "http://")):
+            raise ValueError(f"Invalid URL scheme: {url}")
+
         encoded_data = json.dumps(data).encode("utf-8") if data is not None else None
         headers = {
             "Content-Type": "application/json",
@@ -30,7 +33,7 @@ class ColabRESTClient:
         }
         req = urllib.request.Request(url, data=encoded_data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req) as resp:  # nosec B310
                 body = resp.read().decode("utf-8")
                 return json.loads(body) if body else {}
         except urllib.error.HTTPError as e:

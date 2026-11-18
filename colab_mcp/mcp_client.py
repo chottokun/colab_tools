@@ -43,9 +43,12 @@ class ColabMCPClient:
             "Authorization": f"Bearer {self.access_token}"
         }
 
+        if not self.endpoint.startswith(("https://", "http://")):
+            raise ValueError(f"Invalid endpoint scheme: {self.endpoint}")
+
         req = urllib.request.Request(self.endpoint, data=data, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req) as resp:  # nosec B310
                 raw_body = resp.read().decode("utf-8")
                 return json.loads(raw_body)
         except urllib.error.HTTPError as e:
@@ -54,6 +57,9 @@ class ColabMCPClient:
 
     def list_tools(self) -> List[Dict[str, Any]]:
         """Lists available MCP tools and their schemas from the server."""
+        if not self.endpoint.startswith(("https://", "http://")):
+            raise ValueError(f"Invalid endpoint scheme: {self.endpoint}")
+
         payload = {
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
@@ -69,7 +75,7 @@ class ColabMCPClient:
             headers=headers,
             method="POST"
         )
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req) as resp:  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
             return data.get("result", {}).get("tools", [])
 

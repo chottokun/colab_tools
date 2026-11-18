@@ -142,18 +142,15 @@ class ColabAgentHarness:
 
     def teardown(self):
         """Cleans up session and runtime to release cloud compute resources."""
+        import contextlib
         if self.active_session:
-            try:
+            with contextlib.suppress(Exception):
                 self.client.delete_session(self.active_session)
-            except Exception:
-                pass
             self.active_session = None
 
         if self.active_runtime:
-            try:
+            with contextlib.suppress(Exception):
                 self.client.delete_runtime(self.active_runtime)
-            except Exception:
-                pass
             self.active_runtime = None
 
     def _get_connection_info(self) -> Dict[str, Any]:

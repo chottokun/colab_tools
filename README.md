@@ -1,7 +1,9 @@
 # colab-tools: AI Agent Infrastructure for Google Colab
 
-[![CI](https://github.com/chottokun/colab_tools/actions/workflows/ci.yml/badge.svg)](https://github.com/chottokun/colab_tools/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/colab-tools/)
+[![CI](https://github.com/chottokun/colab_tools/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/chottokun/colab_tools/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org/project/colab-tools/)
+[![Security: Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
+[![Security: pip-audit](https://img.shields.io/badge/security-pip--audit-green.svg)](https://github.com/pypa/pip-audit)
 
 A unified infrastructure enabling **AI Agents and LLMs** to autonomously leverage **Google Colab's Compute Infrastructure (GPU/TPU)** via the **Colab REST API**, **Hosted MCP Server**, and **CLI**.
 
