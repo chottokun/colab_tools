@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified Test Runner for colab_with_mcp.
+"""Unified Test Runner for colab_tools.
 """
 
 import os
@@ -11,7 +11,7 @@ from colab_mcp.config import ColabConfig
 
 def main():
     print("=" * 65)
-    print(" colab_with_mcp (API / MCP / CLI) Test Suite")
+    print(" colab_tools (API / MCP / CLI) Test Suite")
     print("=" * 65)
 
     is_configured, msg = ColabConfig.verify()
@@ -28,7 +28,7 @@ def main():
 
     print("=" * 65)
     if result.wasSuccessful():
-        print("ALL TESTS PASSED! colab_with_mcp is fully functional.")
+        print("ALL TESTS PASSED! colab_tools is fully functional.")
         sys.exit(0)
     else:
         print("SOME TESTS FAILED.")

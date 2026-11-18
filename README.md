@@ -1,4 +1,4 @@
-# colab-with-mcp: AI Agent Infrastructure for Google Colab
+# colab-tools: AI Agent Infrastructure for Google Colab
 
 A unified infrastructure enabling **AI Agents and LLMs** to autonomously leverage **Google Colab's Compute Infrastructure (GPU/TPU)** via the **Colab REST API**, **Hosted MCP Server**, and **CLI**.
 
@@ -53,7 +53,7 @@ When AI agents (Claude, GPT-4o, AutoGen, CrewAI, LangChain, etc.) attempt to run
 ## Installation
 
 ```bash
-cd colab_with_mcp
+cd colab_tools
 pip install -e .
 ```
 
