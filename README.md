@@ -35,7 +35,7 @@ When AI agents (Claude, GPT-4o, AutoGen, CrewAI, LangChain, etc.) attempt to run
                   └──────────────────────┬───────────────────────┘
                                          │
                  ┌───────────────────────┴───────────────────────┐
-                 │          colab-with-mcp Agent Layer           │
+                 │           colab-tools Agent Layer             │
                  │   - ColabAgentHarness (Lifecycle & Execution) │
                  │   - ContextOptimizer  (Token Protection)     │
                  │   - Tool Schemas      (OpenAI / Anthropic)   │
@@ -122,6 +122,57 @@ colab-cli agent tools --format anthropic
 
 # Start stdio MCP bridge (for Claude Desktop / Cursor)
 colab-cli proxy
+```
+
+## Hybrid Usage with Google Official Skills (`colab-operator`)
+
+This project is built to coexist seamlessly with **Google's Official Colab CLI & Skills ecosystem** ([`googlecolab/google-colab-cli`](https://github.com/googlecolab/google-colab-cli)).
+
+Google provides an official skill: **`skills/colab-operator/SKILL.md`** (*Colab Session Operator*), which is also bundled directly in this repository under [`skills/colab-operator/SKILL.md`](skills/colab-operator/SKILL.md).
+
+### When to Use Which Interface
+
+| Interface | Best For | Description |
+| :--- | :--- | :--- |
+| **Google Official CLI + `colab-operator`** | **Claude Code, Codex, Antigravity CLI** | Terminal-native agents executing shell commands directly (`colab run --gpu T4 script.py`, `colab exec`). Follows official mental models and session lifecycle rules. |
+| **`colab-tools` MCP Server (`colab-cli proxy`)** | **Claude Desktop, Cursor, Chat-based Agents** | Standard Model Context Protocol (MCP) clients that communicate strictly via JSON-RPC tool calls without terminal command execution. |
+| **`colab-tools` Python SDK (`ColabAgentHarness`)** | **LangChain, AutoGen, CrewAI, Custom Swarms** | Python-native agent frameworks requiring programmatic auto-provisioning, context optimization, binary file sync, and robust exception retry. |
+
+### Synergistic Agent Setup
+
+You can equip your AI agents with both the official operational guidelines and the unified tools:
+
+#### 1. Claude Code
+Install the official skill directly or load it from this repository:
+```bash
+# Add official skill to Claude Code
+npx skills add googlecolab/google-colab-cli --skill colab-operator
+```
+Claude Code will follow the official safety rules (always stopping sessions, avoiding interactive TTY commands, using `/content` paths) while utilizing `colab-tools` for headless executions.
+
+#### 2. Claude Desktop & Cursor
+Add the MCP configuration to `claude_desktop_config.json` or Cursor Settings:
+```json
+{
+  "mcpServers": {
+    "colab-tools": {
+      "command": "python3",
+      "args": ["-m", "colab_mcp.mcp_proxy"],
+      "env": {
+        "COLAB_API_TOKEN": "<YOUR_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+#### 3. Python Autonomous Agents
+Incorporate `ColabAgentHarness` into your agent loops to benefit from automated token truncation and cloud resource teardown:
+```python
+from colab_mcp.agent import ColabAgentHarness
+
+with ColabAgentHarness(auto_teardown=True, default_accelerator="T4") as agent:
+    res = agent.execute("print('Hello from Agent!')")
 ```
 
 ---
