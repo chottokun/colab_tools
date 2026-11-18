@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "colab": {
+      "command": "python3",
+      "args": ["-m", "colab_mcp.mcp_proxy"],
+      "env": {
+        "COLAB_API_TOKEN": "<YOUR_GOOGLE_CLOUD_OAUTH_TOKEN>"
+      }
+    }
+  }
+}

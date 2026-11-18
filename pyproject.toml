@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "colab-with-mcp"
+version = "0.1.0"
+description = "Unified Google Colab API, MCP Server/Client, and CLI suite for developers and AI agents."
+readme = "README.md"
+authors = [{ name = "chottokun" }]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+colab-cli = "colab_mcp.cli:main"
+colab-mcp = "colab_mcp.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["colab_mcp*"]
