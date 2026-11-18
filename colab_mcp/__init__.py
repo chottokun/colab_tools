@@ -11,6 +11,7 @@ from .config import ColabConfig
 from .mcp_client import ColabMCPClient
 from .api import ColabRESTClient
 from .jupyter_proxy import JupyterProxy
+from .agent.runner import ColabAgentHarness
 
 __version__ = "0.1.0"
-__all__ = ["ColabConfig", "ColabMCPClient", "ColabRESTClient", "JupyterProxy"]
+__all__ = ["ColabConfig", "ColabMCPClient", "ColabRESTClient", "JupyterProxy", "ColabAgentHarness"]

@@ -1,21 +1,54 @@
-# colab-with-mcp
+# colab-with-mcp: AI Agent Infrastructure for Google Colab
 
-Unified Google Colab toolkit integrating the **Colab REST API**, **Hosted MCP Server**, and **Command-Line Interface (CLI)**.
+A unified infrastructure enabling **AI Agents and LLMs** to autonomously leverage **Google Colab's Compute Infrastructure (GPU/TPU)** via the **Colab REST API**, **Hosted MCP Server**, and **CLI**.
 
-## Architecture & Features
+---
 
-- **Colab REST API Client (`colab_mcp.ColabRESTClient`)**:
-  - Direct HTTP client for Colab v1beta endpoints.
-  - Manages runtimes and runtime specifications.
-- **Hosted MCP Client (`colab_mcp.ColabMCPClient`)**:
-  - Interacts directly with Google's hosted MCP endpoint (`https://colaboratory.googleapis.com/mcp`).
-  - Supports all 10 MCP tools: runtime provisioning, session management, and remote Python execution.
-- **stdio MCP Proxy (`colab_mcp.mcp_proxy`)**:
-  - Stdio bridge allowing Claude Desktop, Claude Code, Cursor, and other AI agents to connect to Colab.
-- **Jupyter Proxy File Transfer (`colab_mcp.JupyterProxy`)**:
-  - Efficient file uploads and downloads using `X-Colab-Runtime-Proxy-Token`.
-- **Command-Line Interface (`colab-cli` / `colab-mcp`)**:
-  - Full terminal control over subscriptions, GPU runtimes, code execution, and data sync.
+## Why this framework for AI Agents?
+
+When AI agents (Claude, GPT-4o, AutoGen, CrewAI, LangChain, etc.) attempt to run deep learning code on local machines, they are frequently constrained by hardware. This platform gives agents a standardized, autonomous gateway to Google Colab:
+
+1. **Autonomous Lifecycle Management (`ColabAgentHarness`)**:
+   - Automatically detects, reuses, or provisions GPU (T4 / A100 / H100) and TPU runtimes on demand.
+   - Creates isolated Jupyter kernel sessions so variables and models persist across tool calls.
+   - Automatic teardown guarantees cloud resources are freed upon task completion to prevent unwanted compute charges.
+2. **Context Window Optimization (`ContextOptimizer`)**:
+   - Truncates verbose training logs and traceback messages so they never overflow the LLM's context window.
+3. **Bandwidth-Efficient File Synchronization (`JupyterProxy`)**:
+   - Bypasses LLM prompt tokens: Uploads datasets directly to `/content/...` and downloads output model weights via the Colab Jupyter proxy token (`X-Colab-Runtime-Proxy-Token`).
+4. **Standard LLM Tool Schemas**:
+   - Ready-to-use function calling schemas for **OpenAI** and **Anthropic Claude**.
+5. **Stdio MCP Proxy (`colab-cli proxy`)**:
+   - Standard Model Context Protocol bridge for **Claude Desktop**, **Claude Code**, and **Cursor**.
+
+---
+
+## Architecture Overview
+
+```
+                  ┌──────────────────────────────────────────────┐
+                  │             AI Agent / LLM Host              │
+                  │ (Claude Desktop, Claude Code, Cursor, Swarm) │
+                  └──────────────────────┬───────────────────────┘
+                                         │
+                 ┌───────────────────────┴───────────────────────┐
+                 │          colab-with-mcp Agent Layer           │
+                 │   - ColabAgentHarness (Lifecycle & Execution) │
+                 │   - ContextOptimizer  (Token Protection)     │
+                 │   - Tool Schemas      (OpenAI / Anthropic)   │
+                 └───────┬───────────────────────────────┬───────┘
+                         │                               │
+        MCP (JSON-RPC)   │                               │ Direct Jupyter Proxy
+        Bearer OAuth     │                               │ X-Colab-Runtime-Proxy-Token
+                         ▼                               ▼
+    ┌──────────────────────────────────┐   ┌───────────────────────────────┐
+    │  Google Colab Hosted MCP Server  │   │  Colab Runtime Instance       │
+    │  https://colaboratory.googleapis │   │  (GPU T4/A100/H100, TPU v6e)  │
+    │  .com/mcp                        │   │  /content/...                 │
+    └──────────────────────────────────┘   └───────────────────────────────┘
+```
+
+---
 
 ## Installation
 
@@ -24,64 +57,75 @@ cd colab_with_mcp
 pip install -e .
 ```
 
-## CLI Usage
+---
 
-### Configuration
+## Agent Usage (Python SDK)
+
+### Autonomous Task Execution
+```python
+from colab_mcp.agent import ColabAgentHarness
+
+# The harness automatically provisions GPU, runs code, and frees resources
+with ColabAgentHarness(auto_teardown=True, default_accelerator="T4") as agent:
+    result = agent.execute("""
+import torch
+print("CUDA Available:", torch.cuda.is_available())
+""")
+    print("Status:", result["status"])
+    print("Output:", result["output"])
+```
+
+### Dataset Upload & Model Download
+```python
+with ColabAgentHarness(auto_teardown=True) as agent:
+    result = agent.sync_and_run(
+        code="""
+import pandas as pd
+df = pd.read_csv('content/dataset.csv')
+summary = df.describe().to_json('content/summary.json')
+""",
+        upload_files={"./local_data.csv": "content/dataset.csv"},
+        download_files={"content/summary.json": "./summary.json"}
+    )
+```
+
+### Export Tool Definitions to OpenAI / Claude
+```python
+from colab_mcp.agent import to_openai_tools, to_anthropic_tools
+
+# Pass directly to client.chat.completions.create(..., tools=openai_tools)
+openai_tools = to_openai_tools()
+
+# Pass directly to anthropic.messages.create(..., tools=claude_tools)
+claude_tools = to_anthropic_tools()
+```
+
+---
+
+## CLI for Agents & Developers (`colab-cli`)
+
+Agents operating in a terminal (like Claude Code or Codex) can invoke `colab-cli`:
+
 ```bash
-# Check setup
+# Verify configuration
 colab-cli check
 
-# Set access token
-export COLAB_API_TOKEN=$(gcloud auth print-access-token)
-```
+# Autonomous agent one-liner
+colab-cli agent run -c "import torch; print(torch.cuda.is_available())" --gpu T4 --teardown
 
-### Runtimes & Hardware
-```bash
-# View subscription tier
-colab-cli subscription
+# Export LLM tool definitions
+colab-cli agent tools --format openai
+colab-cli agent tools --format anthropic
 
-# List available specs (GPU/TPU)
-colab-cli specs
-
-# Create a GPU runtime (T4 standard)
-colab-cli runtimes create --gpu T4 --shape standard
-
-# List running instances
-colab-cli runtimes list
-
-# Delete a runtime
-colab-cli runtimes delete runtimes/<RUNTIME_ID>
-```
-
-### Sessions & Code Execution
-```bash
-# Start a Jupyter session
-colab-cli sessions create runtimes/<RUNTIME_ID>
-
-# Execute one-liner
-colab-cli exec --session runtimes/<RUNTIME_ID>/sessions/<SESSION_ID> -c "import torch; print(torch.cuda.is_available())"
-
-# Execute a Python file
-colab-cli exec --session runtimes/<RUNTIME_ID>/sessions/<SESSION_ID> -f train.py
-```
-
-### File Transfers
-```bash
-# Upload local dataset to Colab runtime
-colab-cli files upload runtimes/<RUNTIME_ID> ./dataset.csv content/dataset.csv
-
-# Download results
-colab-cli files download runtimes/<RUNTIME_ID> content/results.json ./results.json
-```
-
-### Running MCP Stdio Proxy (for Claude / Cursor)
-```bash
+# Start stdio MCP bridge (for Claude Desktop / Cursor)
 colab-cli proxy
 ```
 
-## Testing
+---
 
-Run the test suite (includes live tests against the official endpoint):
+## Verification & Testing
+
+Run all 16 integration, unit, and live endpoint tests:
 ```bash
 python3 run_tests.py
 ```

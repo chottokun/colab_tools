@@ -204,6 +204,37 @@ def cmd_files_download(args):
     print(f"Downloaded {args.remote_path} -> {args.local_path} ({len(data)} bytes)")
 
 
+def cmd_agent_run(args):
+    """Runs autonomous agent task via ColabAgentHarness."""
+    from .agent.runner import ColabAgentHarness
+    code = ""
+    if args.code:
+        code = args.code
+    elif args.file:
+        with open(args.file, "r", encoding="utf-8") as f:
+            code = f.read()
+    else:
+        sys.stderr.write("Error: Please provide code via -c CODE or -f FILE\n")
+        sys.exit(1)
+
+    with ColabAgentHarness(auto_teardown=args.teardown, default_accelerator=args.gpu or "T4") as harness:
+        res = harness.execute(code)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+
+
+def cmd_agent_tools(args):
+    """Outputs LLM tool calling schema."""
+    from .agent.tools import to_openai_tools, to_anthropic_tools, get_agent_tool_definitions
+    fmt = (args.format or "openai").lower()
+    if fmt == "openai":
+        tools = to_openai_tools()
+    elif fmt == "anthropic":
+        tools = to_anthropic_tools()
+    else:
+        tools = get_agent_tool_definitions()
+    print(json.dumps(tools, indent=2, ensure_ascii=False))
+
+
 def cmd_proxy(args):
     """Runs stdio MCP server proxy."""
     run_proxy()
@@ -294,6 +325,21 @@ def main():
     # proxy
     p_proxy = subparsers.add_parser("proxy", help="Run stdio MCP Server Proxy for Claude/Cursor")
     p_proxy.set_defaults(func=cmd_proxy)
+
+    # agent
+    p_agent = subparsers.add_parser("agent", help="AI Agent autonomous execution & schemas")
+    agent_sub = p_agent.add_subparsers(dest="action", required=True)
+
+    ag_run = agent_sub.add_parser("run", help="Run autonomous agent job on Colab")
+    ag_run.add_argument("-c", "--code", help="Python code to run")
+    ag_run.add_argument("-f", "--file", help="Python script file")
+    ag_run.add_argument("--gpu", default="T4", help="Target accelerator (T4, A100, H100)")
+    ag_run.add_argument("--teardown", action="store_true", help="Auto-teardown runtime after execution")
+    ag_run.set_defaults(func=cmd_agent_run)
+
+    ag_tools = agent_sub.add_parser("tools", help="Export LLM tool schemas")
+    ag_tools.add_argument("--format", choices=["openai", "anthropic", "raw"], default="openai", help="Schema format")
+    ag_tools.set_defaults(func=cmd_agent_tools)
 
     parsed = parser.parse_args()
     parsed.func(parsed)
