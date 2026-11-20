@@ -120,26 +120,41 @@ class ColabMCPClient:
         access_token: Optional[str] = None,
         endpoint: Optional[str] = None,
         timeout: int = ColabConfig.DEFAULT_HTTP_TIMEOUT,
+        quota_project: Optional[str] = None,
     ):
-        self.access_token = access_token if access_token is not None else ColabConfig.get_token()
+        self._explicit_token: bool = access_token is not None
+        self.access_token = (
+            access_token if self._explicit_token else ColabConfig.get_token()
+        )
         self.endpoint = endpoint or ColabConfig.DEFAULT_MCP_ENDPOINT
         self.timeout = timeout
+        # Google Cloud クオータプロジェクト（x-goog-user-project ヘッダ用）を解決
+        self.quota_project = (
+            quota_project if quota_project is not None else ColabConfig.get_quota_project()
+        )
+
+    def _resolve_token(self, force_refresh: bool = False) -> Optional[str]:
+        """認証トークンを解決する。明示指定がなければ Config から取得・更新する。"""
+        if self._explicit_token:
+            return self.access_token
+        self.access_token = ColabConfig.get_token(force_refresh=force_refresh)
+        return self.access_token
 
     def _validate_endpoint(self) -> None:
-        if not self.endpoint.startswith(("https://", "http://")):
-            raise ValueError(f"Invalid endpoint scheme: {self.endpoint}")
+        ColabConfig.validate_url(self.endpoint)
 
     def call_tool(
         self, tool_name: str, arguments: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Calls an MCP tool by name with arguments."""
-        if not self.access_token:
+        """MCP ツールを指定引数で呼び出す（ADC 使用時は 401 で 1 回だけ自動更新リトライ）。"""
+        self._validate_endpoint()
+        token = self._resolve_token()
+        if not token:
             raise ValueError(
                 "Access token is required. Set COLAB_API_TOKEN environment variable "
                 "or pass access_token to ColabMCPClient."
             )
 
-        self._validate_endpoint()
         payload = {
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
@@ -150,25 +165,37 @@ class ColabMCPClient:
             },
         }
         data = json.dumps(payload).encode("utf-8")
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-            "Authorization": f"Bearer {self.access_token}",
-        }
 
-        req = urllib.request.Request(
-            self.endpoint, data=data, headers=headers, method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
-                raw_body = resp.read().decode("utf-8")
-                ctype = resp.headers.get("Content-Type", "") if getattr(resp, "headers", None) else ""
-                return parse_mcp_http_response(raw_body, ctype)
-        except urllib.error.HTTPError as e:
-            error_content = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"Colab MCP call failed [HTTP {e.code}]: {error_content}"
-            ) from e
+        for attempt in range(2):
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "Authorization": f"Bearer {token}",
+            }
+            # ADC 認証等で必須となるクオータプロジェクトヘッダを付与
+            if self.quota_project:
+                headers["x-goog-user-project"] = self.quota_project
+
+            req = urllib.request.Request(
+                self.endpoint, data=data, headers=headers, method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
+                    raw_body = resp.read().decode("utf-8")
+                    ctype = resp.headers.get("Content-Type", "") if getattr(resp, "headers", None) else ""
+                    return parse_mcp_http_response(raw_body, ctype)
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and attempt == 0 and not self._explicit_token:
+                    new_token = self._resolve_token(force_refresh=True)
+                    if new_token:
+                        token = new_token
+                        continue
+                error_content = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"Colab MCP call failed [HTTP {e.code}]: {error_content}"
+                ) from e
+
+        raise RuntimeError("Colab MCP call failed after token refresh retry.")
 
     def list_tools(self) -> List[Dict[str, Any]]:
         """Lists available MCP tools and their schemas from the server."""
@@ -182,7 +209,8 @@ class ColabMCPClient:
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
         }
-        if self.access_token:
+        # tools/list は認証不要のため、明示的にトークン指定がある場合のみ付与する
+        if self._explicit_token and self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
 
         req = urllib.request.Request(

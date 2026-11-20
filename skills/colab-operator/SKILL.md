@@ -61,3 +61,11 @@ colab stop -s my-session
 - **Always `colab stop -s <name>`**: Idle VMs burn compute units continuously.
 - **Never invoke interactive commands**:
   - `colab repl`, `colab auth`, and `colab drivemount` expect a TTY and will hang when invoked by an autonomous agent.
+
+---
+
+## License & Attribution
+- **Source**: [`googlecolab/google-colab-cli`](https://github.com/googlecolab/google-colab-cli) (`colab_cli/SKILL.md`)
+- **Copyright**: Copyright 2026 Google LLC
+- **License**: Apache License, Version 2.0 (see [`LICENSE`](LICENSE) in this directory)
+- **Modification Notice**: This file is an abridged and restructured version of the original `colab_cli/SKILL.md`.

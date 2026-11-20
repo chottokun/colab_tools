@@ -6,7 +6,13 @@ Provides schemas compatible with:
 - LangChain / LlamaIndex / CrewAI
 """
 
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from ..config import ColabConfig
+from ..mcp_client import extract_tool_payload
+
+if TYPE_CHECKING:
+    from .runner import ColabAgentHarness
 
 SUPPORTED_ACCELERATORS = ["T4", "L4", "G4", "A100", "H100", "V5E1", "V6E1", "NONE"]
 
@@ -129,3 +135,45 @@ def to_anthropic_tools() -> List[Dict[str, Any]]:
         }
         for tool in get_agent_tool_definitions()
     ]
+
+
+def execute_agent_tool(
+    harness: "ColabAgentHarness",
+    tool_name: str,
+    arguments: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """LLM のツール呼び出し名と引数を ColabAgentHarness の実行にディスパッチする。"""
+    args = arguments or {}
+
+    if tool_name == "colab_run_code":
+        code = args.get("code")
+        if not isinstance(code, str):
+            raise ValueError("colab_run_code には文字列の 'code' 引数が必要です。")
+        harness.ensure_runtime(
+            accelerator=args.get("accelerator"),
+            shape=args.get("shape", "SHAPE_STANDARD"),
+        )
+        return harness.execute(code)
+
+    if tool_name == "colab_sync_and_run":
+        code = args.get("code")
+        if not isinstance(code, str):
+            raise ValueError("colab_sync_and_run には文字列の 'code' 引数が必要です。")
+        harness.ensure_runtime(accelerator=args.get("accelerator"))
+        return harness.sync_and_run(
+            code=code,
+            upload_files=args.get("upload_files"),
+            download_files=args.get("download_files"),
+        )
+
+    if tool_name == "colab_list_hardware_specs":
+        return extract_tool_payload(harness.client.list_runtime_specs())
+
+    if tool_name == "colab_list_runtimes":
+        payload = extract_tool_payload(harness.client.list_runtimes())
+        return ColabConfig.redact_secrets(payload)
+
+    if tool_name == "colab_teardown":
+        return harness.teardown(force=True)
+
+    raise ValueError(f"未知のツール名です: {tool_name}")

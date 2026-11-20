@@ -1,13 +1,17 @@
-"""Example showing direct file upload and download via Colab runtime proxy.
+"""Google Colab ランタイムプロキシ経由でファイルを直接送受信するサンプル。
 """
 
 from colab_mcp import ColabMCPClient, JupyterProxy
+from colab_mcp.mcp_client import extract_tool_payload
+
 
 def main():
     client = ColabMCPClient()
-    runtimes = client.list_runtimes().get("result", {}).get("runtimes", [])
+    # 公式 MCP レスポンス（structuredContent 等）から稼働中ランタイム一覧を抽出する
+    payload = extract_tool_payload(client.list_runtimes())
+    runtimes = payload.get("runtimes", [])
     if not runtimes:
-        print("No active runtimes found.")
+        print("アクティブなランタイムが見つかりません。")
         return
 
     rt = runtimes[0]
@@ -15,17 +19,21 @@ def main():
     conn = rt.get("connectionInfo", {})
     url = conn.get("url")
     token = conn.get("token")
+    if not url or not token:
+        print(f"ランタイム {rt_name} の接続情報が取得できません。")
+        return
 
-    print(f"Connecting to runtime: {rt_name}")
+    print(f"接続先ランタイム: {rt_name}")
 
-    # Upload local file
+    # バイナリデータをアップロード
     data = b"Hello from local machine to Google Colab!"
     upload_res = JupyterProxy.upload_file(url, token, "content/hello.txt", data)
-    print("Upload result:", upload_res)
+    print("アップロード結果:", upload_res)
 
-    # Download file back
+    # アップロードしたファイルをダウンロードして検証
     downloaded = JupyterProxy.download_file(url, token, "content/hello.txt")
-    print("Downloaded content:", downloaded.decode("utf-8"))
+    print("ダウンロード内容:", downloaded.decode("utf-8"))
+
 
 if __name__ == "__main__":
     main()

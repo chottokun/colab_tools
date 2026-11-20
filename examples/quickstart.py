@@ -1,27 +1,29 @@
-"""Quickstart example demonstrating Colab MCP & API workflow.
-"""
+"""Colab MCP & API の基本ワークフローを示すクイックスタートサンプル。"""
 
-from colab_mcp import ColabMCPClient, ColabConfig
+from colab_mcp import ColabConfig, ColabMCPClient
+
 
 def main():
+    # 環境変数または ADC（gcloud / ADC JSON）からトークンを確認する
     if not ColabConfig.get_token():
-        print("Please configure COLAB_API_TOKEN in .env or environment variable.")
+        print("認証トークンが未設定です。COLAB_QUOTA_PROJECT と ADC（または COLAB_API_TOKEN）を設定してください。")
         return
 
     client = ColabMCPClient()
 
-    # 1. Check Subscription Tier
-    print("[1] Subscription:", client.get_subscription())
+    # 1. サブスクリプションティアを確認
+    print("[1] サブスクリプション:", client.get_subscription())
 
-    # 2. Check Available Machine Specs (GPU/TPU)
-    print("\n[2] Runtime Specs:", client.list_runtime_specs())
+    # 2. 利用可能なランタイムスペック（CPU / GPU / TPU）を確認
+    print("\n[2] ランタイムスペック一覧:", client.list_runtime_specs())
 
-    # 3. Check Active Runtimes
-    print("\n[3] Active Runtimes:", client.list_runtimes())
+    # 3. 現在稼働中のランタイム一覧を確認
+    print("\n[3] 稼働中ランタイム一覧:", client.list_runtimes())
 
-    # 4. Example Code Execution (requires active session)
+    # 4. コード実行例（アクティブなセッションが必要）
     # res = client.execute_code("import torch; print(torch.cuda.is_available())", session="...")
-    # print("\n[4] Execution Result:", res)
+    # print("\n[4] 実行結果:", res)
+
 
 if __name__ == "__main__":
     main()

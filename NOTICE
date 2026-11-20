@@ -1,0 +1,29 @@
+colab-tools
+Copyright (c) 2026 chottokun
+
+Unless otherwise noted below, the original source code and documentation in
+this repository are licensed under the MIT License (see `LICENSE`).
+
+------------------------------------------------------------------------------
+Third-Party Notice: skills/colab-operator/SKILL.md
+------------------------------------------------------------------------------
+The file `skills/colab-operator/SKILL.md` is an abridged and restructured
+derivative of `colab_cli/SKILL.md` from `googlecolab/google-colab-cli`:
+
+  Source:    https://github.com/googlecolab/google-colab-cli
+  Copyright: Copyright 2026 Google LLC
+  License:   Apache License, Version 2.0
+             (see `skills/colab-operator/LICENSE`)
+
+Modifications in this repository:
+  The original `colab_cli/SKILL.md` was condensed and reformatted for bundled
+  reference alongside `colab-tools`.
+
+------------------------------------------------------------------------------
+Trademarks & Disclaimer
+------------------------------------------------------------------------------
+This project (`colab-tools`) is an independent, unofficial toolset and is not
+affiliated with, endorsed by, or sponsored by Google LLC.
+"Google Colab" and "Colaboratory" are trademarks of Google LLC.
+Use of the Google Colab API and Hosted MCP endpoint is subject to Google's
+applicable terms of service.

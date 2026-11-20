@@ -42,6 +42,12 @@ def get_client() -> ColabMCPClient:
     return ColabMCPClient(access_token=token)
 
 
+def _print_json(data, show_secrets: bool = False) -> None:
+    """既定で機密値（token 等）をマスクした上で JSON を整形出力する。"""
+    out = data if show_secrets else ColabConfig.redact_secrets(data)
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
 def cmd_check(args):
     """Checks configuration status."""
     ok, msg = ColabConfig.verify()
@@ -74,7 +80,7 @@ def cmd_runtimes_list(args):
     """Lists active runtimes."""
     client = get_client()
     res = client.list_runtimes()
-    print(json.dumps(res, indent=2, ensure_ascii=False))
+    _print_json(res, show_secrets=getattr(args, "show_secrets", False))
 
 
 def cmd_runtimes_get(args):
@@ -82,7 +88,7 @@ def cmd_runtimes_get(args):
     client = get_client()
     name = args.name if args.name.startswith("runtimes/") else f"runtimes/{args.name}"
     res = client.get_runtime(name)
-    print(json.dumps(res, indent=2, ensure_ascii=False))
+    _print_json(res, show_secrets=getattr(args, "show_secrets", False))
 
 
 def cmd_runtimes_create(args):
@@ -106,7 +112,7 @@ def cmd_runtimes_create(args):
     }
     print(f"Provisioning Colab runtime ({variant}, {accelerator}, {shape})...")
     res = client.create_runtime(spec=spec, runtime_id=args.id)
-    print(json.dumps(res, indent=2, ensure_ascii=False))
+    _print_json(res, show_secrets=getattr(args, "show_secrets", False))
 
 
 def cmd_runtimes_delete(args):
@@ -136,7 +142,8 @@ def cmd_sessions_list(args):
 def cmd_sessions_delete(args):
     """Deletes a session."""
     client = get_client()
-    res = client.delete_session(args.name)
+    name = args.name if args.name.startswith("runtimes/") else f"runtimes/{args.name}"
+    res = client.delete_session(name)
     print(json.dumps(res, indent=2, ensure_ascii=False))
 
 
@@ -182,27 +189,22 @@ def _resolve_runtime_connection(client: ColabMCPClient, runtime_name: str):
 
 
 def cmd_files_upload(args):
-    """Uploads a local file to a Colab runtime."""
+    """ローカルファイルをストリーミング読み込みして Colab ランタイムへアップロードする。"""
     client = get_client()
     url, token = _resolve_runtime_connection(client, args.runtime)
 
-    with open(args.local_path, "rb") as f:
-        content = f.read()
-
-    res = JupyterProxy.upload_file(url, token, args.remote_path, content)
+    res = JupyterProxy.upload_file_path(url, token, args.local_path, args.remote_path)
     print(f"Uploaded {args.local_path} -> {args.remote_path}")
     print(json.dumps(res, indent=2, ensure_ascii=False))
 
 
 def cmd_files_download(args):
-    """Downloads a file from a Colab runtime to local disk."""
+    """Colab ランタイムからローカルディスクへストリーミングダウンロードする。"""
     client = get_client()
     url, token = _resolve_runtime_connection(client, args.runtime)
 
-    data = JupyterProxy.download_file(url, token, args.remote_path)
-    with open(args.local_path, "wb") as f:
-        f.write(data)
-    print(f"Downloaded {args.remote_path} -> {args.local_path} ({len(data)} bytes)")
+    size = JupyterProxy.download_file_to_path(url, token, args.remote_path, args.local_path)
+    print(f"Downloaded {args.remote_path} -> {args.local_path} ({size} bytes)")
 
 
 def cmd_agent_run(args):
@@ -218,7 +220,14 @@ def cmd_agent_run(args):
         sys.stderr.write("Error: Please provide code via -c CODE or -f FILE\n")
         sys.exit(1)
 
-    accelerator = args.tpu or args.gpu or "T4"
+    if getattr(args, "cpu", False):
+        accelerator = "NONE"
+    elif args.tpu:
+        accelerator = args.tpu
+    elif args.gpu:
+        accelerator = args.gpu
+    else:
+        accelerator = "T4"
     shape = f"SHAPE_{args.shape.upper()}" if getattr(args, "shape", None) else "SHAPE_STANDARD"
 
     with ColabAgentHarness(
@@ -228,7 +237,7 @@ def cmd_agent_run(args):
     ) as harness:
         harness.ensure_runtime(accelerator=accelerator, shape=shape)
         res = harness.execute(code)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
+        _print_json(res, show_secrets=False)
 
 
 def cmd_agent_tools(args):
@@ -273,17 +282,20 @@ def main():
     rt_sub = p_rt.add_subparsers(dest="action", required=True)
 
     rt_list = rt_sub.add_parser("list", help="List active runtimes")
+    rt_list.add_argument("--show-secrets", action="store_true", help="接続トークン等の機密値をマスクせず表示する")
     rt_list.set_defaults(func=cmd_runtimes_list)
 
     rt_get = rt_sub.add_parser("get", help="Get runtime details")
     rt_get.add_argument("name", help="Runtime name (e.g. runtimes/123 or 123)")
+    rt_get.add_argument("--show-secrets", action="store_true", help="接続トークン等の機密値をマスクせず表示する")
     rt_get.set_defaults(func=cmd_runtimes_get)
 
     rt_create = rt_sub.add_parser("create", help="Create a runtime")
     rt_create.add_argument("--gpu", help="GPU accelerator (e.g. T4, A100, H100)")
-    rt_create.add_argument("--tpu", help="TPU accelerator (e.g. v2, v6e)")
+    rt_create.add_argument("--tpu", help="TPU accelerator (e.g. V5E1, V6E1)")
     rt_create.add_argument("--shape", choices=["standard", "highmem"], default="standard", help="Memory shape")
     rt_create.add_argument("--id", help="Optional custom runtime ID")
+    rt_create.add_argument("--show-secrets", action="store_true", help="接続トークン等の機密値をマスクせず表示する")
     rt_create.set_defaults(func=cmd_runtimes_create)
 
     rt_delete = rt_sub.add_parser("delete", help="Delete a runtime")
@@ -309,10 +321,12 @@ def main():
 
     # exec
     p_exec = subparsers.add_parser("exec", help="Execute Python code on Colab")
-    p_exec.add_argument("--session", help="Session resource name")
-    p_exec.add_argument("--runtime", help="Runtime resource name")
-    p_exec.add_argument("-c", "--code", help="Python code string to execute")
-    p_exec.add_argument("-f", "--file", help="Python script file to execute")
+    exec_target = p_exec.add_mutually_exclusive_group(required=True)
+    exec_target.add_argument("--session", help="Session resource name")
+    exec_target.add_argument("--runtime", help="Runtime resource name")
+    exec_source = p_exec.add_mutually_exclusive_group(required=True)
+    exec_source.add_argument("-c", "--code", help="Python code string to execute")
+    exec_source.add_argument("-f", "--file", help="Python script file to execute")
     p_exec.set_defaults(func=cmd_exec)
 
     # files
@@ -342,7 +356,8 @@ def main():
     ag_run = agent_sub.add_parser("run", help="Run autonomous agent job on Colab")
     ag_run.add_argument("-c", "--code", help="Python code to run")
     ag_run.add_argument("-f", "--file", help="Python script file")
-    ag_run.add_argument("--gpu", default="T4", help="Target GPU accelerator (T4, L4, G4, A100, H100)")
+    ag_run.add_argument("--cpu", action="store_true", help="CPU 専用ランタイムを使用する")
+    ag_run.add_argument("--gpu", default=None, help="Target GPU accelerator (T4, L4, G4, A100, H100; 既定は T4)")
     ag_run.add_argument("--tpu", help="Target TPU accelerator (e.g. V5E1, V6E1)")
     ag_run.add_argument("--shape", choices=["standard", "highmem"], default="standard", help="Memory shape")
     ag_run.add_argument("--validate-spec", action="store_true", help="Pre-check eligibility via list_runtime_specs")
