@@ -6,36 +6,52 @@ over standard I/O (stdin/stdout) to Google's hosted Colab MCP endpoint.
 
 import json
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Optional
 
 from .config import ColabConfig
+from .mcp_client import parse_mcp_http_response
 
 
-def log(msg: str):
+def log(msg: str) -> None:
     sys.stderr.write(f"[Colab MCP Proxy] {msg}\n")
     sys.stderr.flush()
 
 
-def forward_request(req_dict: dict, token: Optional[str] = None) -> dict:
-    auth_token = token or ColabConfig.get_token()
+def forward_request(
+    req_dict: dict,
+    token: Optional[str] = None,
+    timeout: int = ColabConfig.DEFAULT_HTTP_TIMEOUT,
+) -> Optional[dict]:
+    """Forwards a JSON-RPC 2.0 request to the hosted Colab MCP endpoint.
+
+    Returns None for JSON-RPC notifications (messages without an `id` field),
+    as MCP / JSON-RPC 2.0 forbids sending a response to notifications.
+    """
+    is_notification = "id" not in req_dict
     req_id = req_dict.get("id")
+    auth_token = token if token is not None else ColabConfig.get_token()
 
     # tools/list can be fetched without token, but tools/call requires it
     if req_dict.get("method") == "tools/call" and not auth_token:
+        if is_notification:
+            return None
         return {
             "jsonrpc": "2.0",
             "id": req_id,
             "error": {
                 "code": -32603,
-                "message": "Authentication required. Set COLAB_API_TOKEN environment variable."
-            }
+                "message": (
+                    "Authentication required. Set COLAB_API_TOKEN environment variable "
+                    "or authenticate via gcloud ADC."
+                ),
+            },
         }
 
     headers = {
         "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream"
+        "Accept": "application/json, text/event-stream",
     }
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
@@ -44,37 +60,48 @@ def forward_request(req_dict: dict, token: Optional[str] = None) -> dict:
     endpoint = ColabConfig.DEFAULT_MCP_ENDPOINT
     if not endpoint.startswith(("https://", "http://")):
         raise ValueError(f"Insecure or invalid URL scheme in MCP endpoint: {endpoint}")
+
     req = urllib.request.Request(
         endpoint,
         data=data,
         headers=headers,
-        method="POST"
+        method="POST",
     )
     try:
-        with urllib.request.urlopen(req) as resp:  # nosec B310
-            return json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
+            if is_notification:
+                return None
+            raw_body = resp.read().decode("utf-8")
+            ctype = resp.headers.get("Content-Type", "") if getattr(resp, "headers", None) else ""
+            return parse_mcp_http_response(raw_body, ctype)
     except urllib.error.HTTPError as e:
+        if is_notification:
+            log(f"Notification HTTP error {e.code}")
+            return None
         body = e.read().decode("utf-8", errors="replace")
         return {
             "jsonrpc": "2.0",
             "id": req_id,
             "error": {
                 "code": e.code,
-                "message": f"Colab endpoint HTTP error {e.code}: {body}"
-            }
+                "message": f"Colab endpoint HTTP error {e.code}: {body}",
+            },
         }
     except Exception as e:
+        if is_notification:
+            log(f"Notification dispatch error: {e}")
+            return None
         return {
             "jsonrpc": "2.0",
             "id": req_id,
             "error": {
                 "code": -32603,
-                "message": f"Proxy dispatch failed: {str(e)}"
-            }
+                "message": f"Proxy dispatch failed: {str(e)}",
+            },
         }
 
 
-def run_proxy():
+def run_proxy() -> None:
     """Runs the stdio loop for MCP clients."""
     log("Started Colab MCP stdio proxy. Listening on stdin...")
     while True:
@@ -91,8 +118,9 @@ def run_proxy():
             continue
 
         resp = forward_request(req)
-        sys.stdout.write(json.dumps(resp) + "\n")
-        sys.stdout.flush()
+        if resp is not None:
+            sys.stdout.write(json.dumps(resp) + "\n")
+            sys.stdout.flush()
 
 
 if __name__ == "__main__":

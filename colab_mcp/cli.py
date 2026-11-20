@@ -32,9 +32,11 @@ def get_client() -> ColabMCPClient:
     token = ColabConfig.get_token()
     if not token:
         sys.stderr.write(
-            "Error: COLAB_API_TOKEN is not set.\n"
-            "Please set it via environment variable or in ~/.env.colab\n"
-            "Example: export COLAB_API_TOKEN=$(gcloud auth print-access-token)\n"
+            "Error: COLAB_API_TOKEN is not set and gcloud ADC is unavailable.\n"
+            "Configure via one of the following:\n"
+            f"  1. {ColabConfig.gcloud_login_command()}\n"
+            "  2. export COLAB_API_TOKEN=$(gcloud auth application-default print-access-token)\n"
+            "  3. Save COLAB_API_TOKEN=... in ~/.env.colab\n"
         )
         sys.exit(1)
     return ColabMCPClient(access_token=token)
@@ -49,7 +51,9 @@ def cmd_check(args):
     print(f"Status:  {'[OK]' if ok else '[ACTION REQUIRED]'}")
     print(f"Details: {msg}")
     if not ok:
-        print("\nTo configure, export COLAB_API_TOKEN or create ~/.env.colab")
+        print("\nRecommended setup:")
+        print(f"  {ColabConfig.gcloud_login_command()}")
+        print("  export COLAB_API_TOKEN=$(gcloud auth application-default print-access-token)")
 
 
 def cmd_subscription(args):
@@ -109,7 +113,7 @@ def cmd_runtimes_delete(args):
     """Deletes a runtime."""
     client = get_client()
     name = args.name if args.name.startswith("runtimes/") else f"runtimes/{args.name}"
-    res = client.delete_runtime(name)
+    res = client.delete_runtime(name, allow_missing=True)
     print(json.dumps(res, indent=2, ensure_ascii=False))
 
 
@@ -160,20 +164,27 @@ def cmd_exec(args):
     print(json.dumps(res, indent=2, ensure_ascii=False))
 
 
-def cmd_files_upload(args):
-    """Uploads a local file to a Colab runtime."""
-    client = get_client()
-    name = args.runtime if args.runtime.startswith("runtimes/") else f"runtimes/{args.runtime}"
-    info = client.get_runtime(name)
+def _resolve_runtime_connection(client: ColabMCPClient, runtime_name: str):
+    from .mcp_client import extract_tool_payload
 
-    runtime_data = info.get("result", {}).get("runtime") or info.get("result") or {}
+    name = runtime_name if runtime_name.startswith("runtimes/") else f"runtimes/{runtime_name}"
+    info = client.get_runtime(name)
+    runtime_data = extract_tool_payload(info)
+    if "runtime" in runtime_data and isinstance(runtime_data["runtime"], dict):
+        runtime_data = runtime_data["runtime"]
     conn = runtime_data.get("connectionInfo", {})
     url = conn.get("url")
     token = conn.get("token")
-
     if not url or not token:
         sys.stderr.write(f"Error: Unable to retrieve connection URL/token for {name}.\n")
         sys.exit(1)
+    return url, token
+
+
+def cmd_files_upload(args):
+    """Uploads a local file to a Colab runtime."""
+    client = get_client()
+    url, token = _resolve_runtime_connection(client, args.runtime)
 
     with open(args.local_path, "rb") as f:
         content = f.read()
@@ -186,17 +197,7 @@ def cmd_files_upload(args):
 def cmd_files_download(args):
     """Downloads a file from a Colab runtime to local disk."""
     client = get_client()
-    name = args.runtime if args.runtime.startswith("runtimes/") else f"runtimes/{args.runtime}"
-    info = client.get_runtime(name)
-
-    runtime_data = info.get("result", {}).get("runtime") or info.get("result") or {}
-    conn = runtime_data.get("connectionInfo", {})
-    url = conn.get("url")
-    token = conn.get("token")
-
-    if not url or not token:
-        sys.stderr.write(f"Error: Unable to retrieve connection URL/token for {name}.\n")
-        sys.exit(1)
+    url, token = _resolve_runtime_connection(client, args.runtime)
 
     data = JupyterProxy.download_file(url, token, args.remote_path)
     with open(args.local_path, "wb") as f:
@@ -217,7 +218,15 @@ def cmd_agent_run(args):
         sys.stderr.write("Error: Please provide code via -c CODE or -f FILE\n")
         sys.exit(1)
 
-    with ColabAgentHarness(auto_teardown=args.teardown, default_accelerator=args.gpu or "T4") as harness:
+    accelerator = args.tpu or args.gpu or "T4"
+    shape = f"SHAPE_{args.shape.upper()}" if getattr(args, "shape", None) else "SHAPE_STANDARD"
+
+    with ColabAgentHarness(
+        auto_teardown=args.teardown,
+        default_accelerator=accelerator,
+        validate_spec=getattr(args, "validate_spec", False),
+    ) as harness:
+        harness.ensure_runtime(accelerator=accelerator, shape=shape)
         res = harness.execute(code)
         print(json.dumps(res, indent=2, ensure_ascii=False))
 
@@ -333,7 +342,10 @@ def main():
     ag_run = agent_sub.add_parser("run", help="Run autonomous agent job on Colab")
     ag_run.add_argument("-c", "--code", help="Python code to run")
     ag_run.add_argument("-f", "--file", help="Python script file")
-    ag_run.add_argument("--gpu", default="T4", help="Target accelerator (T4, A100, H100)")
+    ag_run.add_argument("--gpu", default="T4", help="Target GPU accelerator (T4, L4, G4, A100, H100)")
+    ag_run.add_argument("--tpu", help="Target TPU accelerator (e.g. V5E1, V6E1)")
+    ag_run.add_argument("--shape", choices=["standard", "highmem"], default="standard", help="Memory shape")
+    ag_run.add_argument("--validate-spec", action="store_true", help="Pre-check eligibility via list_runtime_specs")
     ag_run.add_argument("--teardown", action="store_true", help="Auto-teardown runtime after execution")
     ag_run.set_defaults(func=cmd_agent_run)
 

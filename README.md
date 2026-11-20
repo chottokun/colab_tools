@@ -14,17 +14,19 @@ A unified infrastructure enabling **AI Agents and LLMs** to autonomously leverag
 When AI agents (Claude, GPT-4o, AutoGen, CrewAI, LangChain, etc.) attempt to run deep learning code on local machines, they are frequently constrained by hardware. This platform gives agents a standardized, autonomous gateway to Google Colab:
 
 1. **Autonomous Lifecycle Management (`ColabAgentHarness`)**:
-   - Automatically detects, reuses, or provisions GPU (T4 / A100 / H100) and TPU runtimes on demand.
-   - Creates isolated Jupyter kernel sessions so variables and models persist across tool calls.
-   - Automatic teardown guarantees cloud resources are freed upon task completion to prevent unwanted compute charges.
+   - Automatically detects, reuses, or provisions **CPU, GPU (T4 / L4 / G4 / A100 / H100), and TPU (v5e1 / v6e1)** runtimes on demand.
+   - Optional pre-flight eligibility check (`validate_spec=True`) against `list_runtime_specs` before allocation.
+   - Creates isolated Jupyter kernel sessions with idempotent `requestId` (AIP-155) and resumable `executionId` retries.
+   - Automatic teardown (`allowMissing=True`) guarantees cloud resources are freed upon task completion to prevent unwanted compute charges.
 2. **Context Window Optimization (`ContextOptimizer`)**:
-   - Truncates verbose training logs and traceback messages so they never overflow the LLM's context window.
-3. **Bandwidth-Efficient File Synchronization (`JupyterProxy`)**:
-   - Bypasses LLM prompt tokens: Uploads datasets directly to `/content/...` and downloads output model weights via the Colab Jupyter proxy token (`X-Colab-Runtime-Proxy-Token`).
+   - Parses official Colab MCP `structuredContent` (`stdout`, `stderr`, `result`, `executionError`, `outputTruncated`) and truncates verbose logs so they never overflow the LLM's context window.
+3. **Production-Grade File Synchronization (`JupyterProxy`)**:
+   - Bypasses LLM prompt tokens via `X-Colab-Runtime-Proxy-Token`.
+   - Automatically creates missing parent directories, chunks uploads larger than 30 MB (complying with Colab's 50 MB per-request cap), supports HTTP `Range` downloads, and **auto-refreshes expiring proxy tokens** via `get_runtime`.
 4. **Standard LLM Tool Schemas**:
    - Ready-to-use function calling schemas for **OpenAI** and **Anthropic Claude**.
-5. **Stdio MCP Proxy (`colab-cli proxy`)**:
-   - Standard Model Context Protocol bridge for **Claude Desktop**, **Claude Code**, and **Cursor**.
+5. **Protocol-Compliant Stdio MCP Proxy (`colab-cli proxy`)**:
+   - Standard Model Context Protocol bridge for **Claude Desktop**, **Claude Code**, and **Cursor** with Streamable HTTP (JSON & SSE) and JSON-RPC notification support.
 
 ---
 
@@ -48,18 +50,35 @@ When AI agents (Claude, GPT-4o, AutoGen, CrewAI, LangChain, etc.) attempt to run
                          ▼                               ▼
     ┌──────────────────────────────────┐   ┌───────────────────────────────┐
     │  Google Colab Hosted MCP Server  │   │  Colab Runtime Instance       │
-    │  https://colaboratory.googleapis │   │  (GPU T4/A100/H100, TPU v6e)  │
-    │  .com/mcp                        │   │  /content/...                 │
+    │  https://colaboratory.googleapis │   │  (GPU T4/L4/A100/H100, TPU)   │
+    │  .com/mcp                        │   │  /content/... (chunked sync)  │
     └──────────────────────────────────┘   └───────────────────────────────┘
 ```
 
 ---
 
-## Installation
+## Installation & Authentication
 
 ```bash
+git clone https://github.com/chottokun/colab_tools.git
 cd colab_tools
 pip install -e .
+```
+
+### Authentication (OAuth 2.0 / gcloud ADC)
+
+`colab-tools` resolves credentials automatically in the following order:
+1. Explicit `access_token` argument
+2. Environment variables (`COLAB_API_TOKEN`, `GOOGLE_OAUTH_TOKEN`, `GCLOUD_AUTH_TOKEN`) or `.env` / `~/.env.colab`
+3. Automatic fallback to **`gcloud` Application Default Credentials (ADC)**
+
+To authenticate via `gcloud` with the required Colab scopes:
+```bash
+gcloud auth application-default login \
+  --scopes=openid,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/colaboratory
+
+# Verify setup
+colab-cli check
 ```
 
 ---
@@ -181,7 +200,7 @@ with ColabAgentHarness(auto_teardown=True, default_accelerator="T4") as agent:
 
 ## Verification & Testing
 
-Run all 16 integration, unit, and live endpoint tests:
+Run all 25 unit, integration, and **live MCP schema contract tests** (verified automatically against `https://colaboratory.googleapis.com/mcp`):
 ```bash
 python3 run_tests.py
 ```
