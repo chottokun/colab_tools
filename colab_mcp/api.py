@@ -95,8 +95,10 @@ class ColabRESTClient:
                         token = new_token
                         continue
                 err = e.read().decode("utf-8", errors="replace")
+                hint = ColabConfig.api_error_hint(err, self.quota_project)
                 raise RuntimeError(
                     f"Colab REST API request failed [HTTP {e.code}]: {err}"
+                    + (f"\n{hint}" if hint else "")
                 ) from e
 
         raise RuntimeError("Colab REST API request failed after token refresh retry.")

@@ -87,6 +87,7 @@ colab-cli check
 
 ### Headless Operation (No Browser / No `gcloud` CLI)
 
+- **Prerequisite: the Colab API (colaboratory.googleapis.com) must be enabled in the quota project.** With user credentials (ADC), the API returns 403 when no quota project is set, even with a valid token. Enable it from the console (https://console.developers.google.com/apis/api/colaboratory.googleapis.com/overview?project=<YOUR_GCP_PROJECT_ID>) and allow a few minutes for propagation. `colab-cli check` reports a missing quota project as `[ACTION REQUIRED]`.
 - Avoid storing short-lived `COLAB_API_TOKEN` values (~1 hour TTL) in `.env`.
 - Place an `application_default_credentials.json` file (containing `refresh_token` and `quota_project_id`, obtained from another machine) at `~/.config/gcloud/application_default_credentials.json` with `chmod 600`, and set only `COLAB_QUOTA_PROJECT` in `.env` or environment variables.
 - `ColabConfig` refreshes access tokens directly against `token_uri` without requiring `gcloud` on the host.

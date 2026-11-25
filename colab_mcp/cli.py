@@ -56,7 +56,7 @@ def cmd_check(args):
     print("=" * 50)
     print(f"Status:  {'[OK]' if ok else '[ACTION REQUIRED]'}")
     print(f"Details: {msg}")
-    if not ok:
+    if not ok and "missing" in msg:
         print("\nRecommended setup:")
         print(f"  {ColabConfig.gcloud_login_command()}")
         print("  export COLAB_API_TOKEN=$(gcloud auth application-default print-access-token)")
@@ -369,7 +369,12 @@ def main():
     ag_tools.set_defaults(func=cmd_agent_tools)
 
     parsed = parser.parse_args()
-    parsed.func(parsed)
+    try:
+        parsed.func(parsed)
+    except RuntimeError as e:
+        # API エラーは traceback ではなく、対処ヒント付きの1メッセージで出す
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -276,6 +276,47 @@ class TestColabClients(unittest.TestCase):
         # 元の辞書が破壊されていないこと
         self.assertEqual(raw["connectionInfo"]["token"], "secret-proxy-token")
 
+    def test_config_redact_secrets_embedded_json_text(self):
+        """MCP content text に埋め込まれた JSON 文字列内の機密値もマスクされることを検証する。"""
+        raw = {
+            "content": [
+                {
+                    "type": "text",
+                    "text": '{"runtimes": [{"connectionInfo": {"token": "secret-proxy-token", "url": "https://rt-1.colab.dev"}}]}',
+                }
+            ]
+        }
+        masked = ColabConfig.redact_secrets(raw)
+        text = masked["content"][0]["text"]
+        self.assertNotIn("secret-proxy-token", text)
+        self.assertIn(ColabConfig.REDACTED_VALUE, text)
+        self.assertIn("https://rt-1.colab.dev", text)
+
+    def test_config_verify_adc_without_quota_project(self):
+        """ADC 由来トークンでクオータプロジェクト未設定なら check が要対応を返すことを検証する。"""
+        with (
+            patch.object(
+                ColabConfig, "get_token_with_source", return_value=("tok", "adc:json")
+            ),
+            patch.object(ColabConfig, "get_quota_project", return_value=None),
+        ):
+            ok, msg = ColabConfig.verify()
+        self.assertFalse(ok)
+        self.assertIn("quota_project is not set", msg)
+
+    def test_config_api_error_hint(self):
+        """既知の 403 メッセージに対処ヒントが付くことを検証する。"""
+        hint = ColabConfig.api_error_hint(
+            "The colaboratory.googleapis.com API requires a quota project"
+        )
+        self.assertIn("COLAB_QUOTA_PROJECT", hint)
+        hint = ColabConfig.api_error_hint(
+            "Colab API has not been used in project my-proj before or it is disabled",
+            quota_project="my-proj",
+        )
+        self.assertIn("project=my-proj", hint)
+        self.assertEqual(ColabConfig.api_error_hint("some other error"), "")
+
     def test_config_token_cache_and_force_refresh(self):
         """ADC トークンのキャッシュ再利用と force_refresh=True による再取得を検証する。"""
         with (

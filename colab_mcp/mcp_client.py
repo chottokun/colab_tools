@@ -191,8 +191,10 @@ class ColabMCPClient:
                         token = new_token
                         continue
                 error_content = e.read().decode("utf-8", errors="replace")
+                hint = ColabConfig.api_error_hint(error_content, self.quota_project)
                 raise RuntimeError(
                     f"Colab MCP call failed [HTTP {e.code}]: {error_content}"
+                    + (f"\n{hint}" if hint else "")
                 ) from e
 
         raise RuntimeError("Colab MCP call failed after token refresh retry.")
