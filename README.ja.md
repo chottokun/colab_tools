@@ -87,6 +87,7 @@ colab-cli check
 
 ### ヘッドレス運用（ブラウザなし・`gcloud` CLI なし）
 
+- **前提：クオータプロジェクトで Colab API（colaboratory.googleapis.com）が有効化されていること。** ADC 等のユーザー認証では、トークンが有効でもクオータプロジェクト未設定だと API が 403 を返します。有効化はコンソール（https://console.developers.google.com/apis/api/colaboratory.googleapis.com/overview?project=<YOUR_GCP_PROJECT_ID>）から行い、反映まで数分待ちます。`colab-cli check` はクオータプロジェクト未設定を `[ACTION REQUIRED]` として報告します。
 - 有効期限の短い `COLAB_API_TOKEN`（約 1 時間）を `.env` に固定する運用は推奨しません。
 - 別端末等で取得した `application_default_credentials.json`（`refresh_token` と `quota_project_id` を含む）を `~/.config/gcloud/application_default_credentials.json` に `chmod 600` で配置し、`.env` または環境変数には `COLAB_QUOTA_PROJECT` のみを設定します。
 - これにより、`gcloud` CLI が存在しない環境でも `ColabConfig` が `token_uri` に対してアクセストークンを直接再発行します。

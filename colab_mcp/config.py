@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess  # nosec B404
 import time
@@ -62,7 +63,12 @@ class ColabConfig:
 
     @classmethod
     def redact_secrets(cls, obj: Any) -> Any:
-        """辞書・リスト内の機密キー（token 等）を再帰的にマスクした新しい構造を返す。"""
+        """辞書・リスト内の機密キー（token 等）を再帰的にマスクした新しい構造を返す。
+
+        文字列値に JSON が埋め込まれている場合（MCP の content text 等）も、
+        パースして再帰的にマスクし直す。JSON として読めない文字列は、
+        機密キーの `"key": "value"` パターンを正規表現でマスクする。
+        """
         if isinstance(obj, dict):
             redacted = {}
             for k, v in obj.items():
@@ -78,7 +84,30 @@ class ColabConfig:
             return redacted
         if isinstance(obj, list):
             return [cls.redact_secrets(item) for item in obj]
+        if isinstance(obj, str):
+            return cls._redact_text(obj)
         return obj
+
+    @classmethod
+    def _redact_text(cls, text: str) -> str:
+        """文字列中の機密値をマスクする（埋め込み JSON は構造的に、それ以外は正規表現で）。"""
+        stripped = text.strip()
+        if stripped[:1] in ("{", "["):
+            try:
+                parsed = json.loads(stripped)
+            except (ValueError, TypeError):
+                parsed = None
+            if isinstance(parsed, (dict, list)):
+                return json.dumps(
+                    cls.redact_secrets(parsed), indent=2, ensure_ascii=False
+                )
+        keys = "|".join(sorted(cls.SENSITIVE_KEYS))
+        return re.sub(
+            rf'("{keys}"\s*:\s*")[^"]*(")',
+            rf"\1{cls.REDACTED_VALUE}\2",
+            text,
+            flags=re.IGNORECASE,
+        )
 
     @classmethod
     def load_env(
@@ -329,4 +358,31 @@ class ColabConfig:
         quota_project = cls.get_quota_project()
         if quota_project:
             return True, f"Token configured (source: {source}, quota_project: {quota_project})."
+        if source.startswith("adc") or source.startswith("gcloud"):
+            # ADC 等のユーザー認証では、クオータプロジェクト未設定だと
+            # Colab API が 403 を返す（トークン自体は有効でも実呼び出しが失敗する）。
+            return (
+                False,
+                f"Token configured (source: {source}), but quota_project is not set. "
+                "The Colab API requires a quota project for user credentials: "
+                "set COLAB_QUOTA_PROJECT (or quota_project_id in the ADC JSON) to a "
+                "GCP project where the Colab API (colaboratory.googleapis.com) is enabled.",
+            )
         return True, f"Token configured (source: {source}, quota_project: not set)."
+
+    @classmethod
+    def api_error_hint(cls, body: str, quota_project: Optional[str] = None) -> str:
+        """既知の API エラーメッセージに対する対処ヒントを返す（該当なしは空文字）。"""
+        if "requires a quota project" in body:
+            return (
+                "Hint: set COLAB_QUOTA_PROJECT (or quota_project_id in the ADC JSON) "
+                "to a GCP project where the Colab API is enabled."
+            )
+        if "has not been used in project" in body or "it is disabled" in body:
+            project = quota_project or cls.get_quota_project() or "<your-project>"
+            return (
+                "Hint: enable the Colab API in the quota project: "
+                "https://console.developers.google.com/apis/api/colaboratory.googleapis.com/overview"
+                f"?project={project} (then wait a few minutes for propagation)."
+            )
+        return ""
